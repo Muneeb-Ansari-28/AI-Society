@@ -4,10 +4,23 @@ from sqlalchemy.orm import Session
 from .models import AgentModel, AgentStateModel, EventModel, MemoryModel, RelationshipModel, WorldStateModel
 from ..agents.personalities import AGENT_PROFILES
 
+DEFAULT_RELATIONSHIPS = [
+    ("alex", "mia", 65, 70, "Friendly trade partners: grain for baked bread"),
+    ("alex", "noah", 55, 50, "Business acquaintances: seeds and farm tools"),
+    ("alex", "emma", 70, 65, "Warm neighbors: herbal salves for farm aches"),
+    ("alex", "leo", 65, 65, "Supportive villagers: barn repairs and oak timber"),
+    ("mia", "noah", 45, 45, "Barter tension over honey and flour prices"),
+    ("mia", "emma", 75, 80, "Close friends: morning tea and fresh pastries"),
+    ("mia", "leo", 55, 55, "Good neighbors: pastry delivery for carpentry"),
+    ("noah", "emma", 60, 55, "Respectful traders: rare medicinal roots from caravan"),
+    ("noah", "leo", 60, 55, "Trading partners: saw blades and timber orders"),
+    ("emma", "leo", 65, 65, "Caring friend: reminding Leo not to work late"),
+]
+
 class Repository:
     @staticmethod
     def initialize_default_data(db: Session):
-        """Populate database with default agents and initial states if empty"""
+        """Populate database with default agents, initial states, world state, and relationships"""
         # 1. Initialize agents and states
         for aid, profile in AGENT_PROFILES.items():
             existing_agent = db.query(AgentModel).filter(AgentModel.id == aid).first()
@@ -44,6 +57,97 @@ class Repository:
             world = WorldStateModel(id=1, day=1, time_minutes=510, is_running=True, speed=1.0, weather="Sunny")
             db.add(world)
 
+        # 3. Initialize default relationships (bidirectional)
+        for s_id, t_id, trust, friendship, note in DEFAULT_RELATIONSHIPS:
+            # Source -> Target
+            rel_forward = db.query(RelationshipModel).filter(
+                RelationshipModel.source_id == s_id,
+                RelationshipModel.target_id == t_id
+            ).first()
+            if not rel_forward:
+                db.add(RelationshipModel(
+                    source_id=s_id,
+                    target_id=t_id,
+                    trust=trust,
+                    friendship=friendship,
+                    last_interaction=note
+                ))
+
+            # Target -> Source
+            rel_reverse = db.query(RelationshipModel).filter(
+                RelationshipModel.source_id == t_id,
+                RelationshipModel.target_id == s_id
+            ).first()
+            if not rel_reverse:
+                db.add(RelationshipModel(
+                    source_id=t_id,
+                    target_id=s_id,
+                    trust=trust,
+                    friendship=friendship,
+                    last_interaction=note
+                ))
+
+        db.commit()
+
+    @staticmethod
+    def get_agent_relationships(db: Session, agent_id: str) -> Dict[str, Dict[str, Any]]:
+        rels = db.query(RelationshipModel).filter(RelationshipModel.source_id == agent_id).all()
+        result = {}
+        for r in rels:
+            target_profile = AGENT_PROFILES.get(r.target_id, {})
+            result[r.target_id] = {
+                "name": target_profile.get("name", r.target_id.capitalize()),
+                "occupation": target_profile.get("occupation", ""),
+                "trust": r.trust,
+                "friendship": r.friendship,
+                "last_interaction": r.last_interaction,
+            }
+        return result
+
+    @staticmethod
+    def get_relationship(db: Session, source_id: str, target_id: str) -> Optional[Dict[str, Any]]:
+        rel = db.query(RelationshipModel).filter(
+            RelationshipModel.source_id == source_id,
+            RelationshipModel.target_id == target_id
+        ).first()
+        if not rel:
+            return None
+        return {
+            "source_id": rel.source_id,
+            "target_id": rel.target_id,
+            "trust": rel.trust,
+            "friendship": rel.friendship,
+            "last_interaction": rel.last_interaction,
+        }
+
+    @staticmethod
+    def update_relationship(
+        db: Session,
+        source_id: str,
+        target_id: str,
+        trust_delta: int = 0,
+        friendship_delta: int = 0,
+        interaction: str = ""
+    ):
+        """Update directional relationship scores and reciprocity"""
+        for s, t in [(source_id, target_id), (target_id, source_id)]:
+            rel = db.query(RelationshipModel).filter(
+                RelationshipModel.source_id == s,
+                RelationshipModel.target_id == t
+            ).first()
+            if rel:
+                rel.trust = max(0, min(100, rel.trust + trust_delta))
+                rel.friendship = max(0, min(100, rel.friendship + friendship_delta))
+                if interaction:
+                    rel.last_interaction = interaction
+            else:
+                db.add(RelationshipModel(
+                    source_id=s,
+                    target_id=t,
+                    trust=max(0, min(100, 50 + trust_delta)),
+                    friendship=max(0, min(100, 50 + friendship_delta)),
+                    last_interaction=interaction
+                ))
         db.commit()
 
     @staticmethod
@@ -52,6 +156,9 @@ class Repository:
         state = db.query(AgentStateModel).filter(AgentStateModel.agent_id == agent_id).first()
         if not agent or not state:
             return None
+
+        memories = Repository.get_agent_memories(db, agent_id, limit=5)
+        relationships = Repository.get_agent_relationships(db, agent_id)
 
         return {
             "id": agent.id,
@@ -69,6 +176,8 @@ class Repository:
             "current_action": state.current_action,
             "action_detail": state.action_detail,
             "inventory": state.get_inventory(),
+            "relationships": relationships,
+            "recent_memories": memories,
         }
 
     @staticmethod

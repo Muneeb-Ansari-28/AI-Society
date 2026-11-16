@@ -15,21 +15,24 @@ class DecisionEngine:
         agent: Dict[str, Any],
         world: Dict[str, Any],
         memories: List[str],
-        nearby_agents: List[str]
+        nearby_agents: List[str],
+        relationships_text: Optional[str] = None
     ) -> Dict[str, Any]:
         """
         Runs the full AI decision cycle for an agent:
-        Observe -> Retrieve memories -> Think (Ollama Llama 3.2 call) -> Validate -> Return structured action
+        Observe -> Retrieve memories & relationships -> Think (Ollama Llama 3.2 call) -> Validate -> Return structured action
         """
         system_prompt = build_system_prompt(agent)
-        observation_prompt = build_observation_prompt(agent, world, memories, nearby_agents)
+        observation_prompt = build_observation_prompt(
+            agent, world, memories, nearby_agents, relationships_text=relationships_text
+        )
 
         # 1. Low energy safety rule (simulation mechanic)
         energy = agent.get("energy", 100)
         if energy <= 15:
             return {
                 "action": "rest",
-                "location": agent.get("home_location", "alex_farm"),
+                "location": agent.get("home_location", "town_square"),
                 "target": None,
                 "reason": "Exhausted from a hard day's work and needs to recover energy.",
                 "dialogue": "I can barely keep my eyes open... heading home to rest."
@@ -44,14 +47,13 @@ class DecisionEngine:
             )
             action_data = DecisionEngine._parse_and_validate(raw_response, agent)
             return action_data
-        except Exception as e:
+        except Exception:
             # Fallback contextual action if Ollama fails or times out
             return DecisionEngine._get_contextual_fallback(agent)
 
     @staticmethod
     def _parse_and_validate(raw_response: str, agent: Dict[str, Any]) -> Dict[str, Any]:
         """Cleans and validates the JSON response from Llama 3.2"""
-        # Find JSON block in raw response
         text = raw_response.strip()
         json_match = re.search(r"\{.*\}", text, re.DOTALL)
         if json_match:
@@ -67,7 +69,7 @@ class DecisionEngine:
         # Validate location
         location = data.get("location")
         if not location or location not in VALID_LOCATIONS:
-            location = agent.get("work_location", "wheat_field")
+            location = agent.get("work_location", "town_square")
 
         reason = data.get("reason", f"Decided to {action} based on daily routine.")
         dialogue = data.get("dialogue")

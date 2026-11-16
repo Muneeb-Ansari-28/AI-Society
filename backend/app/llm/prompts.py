@@ -24,14 +24,15 @@ def format_time_string(time_minutes: int) -> str:
 
 def build_system_prompt(profile: Dict[str, Any]) -> str:
     return (
-        f"You are {profile['name']}, an autonomous {profile['occupation']} living in the village of Tiny Society.\n"
+        f"You are {profile['name']}, an autonomous {profile['occupation']} living in the peaceful village of Tiny Society.\n"
         f"Personality: {profile['personality']}\n"
         f"Personal Goal: {profile['goals']}\n"
         f"Key Tension/Conflict: {profile.get('conflict', '')}\n"
         f"Home: {profile.get('home_location', 'town_square')} | Primary Workplace: {profile.get('work_location', 'town_square')}\n\n"
         "You must make an autonomous decision for your next simulation action.\n"
         "Allowed Actions: [move, work, talk, trade, help, rest, idle]\n"
-        "Allowed Locations: [alex_farm, wheat_field, town_square, noah_shop, mia_bakery, emma_healer, leo_workshop, lake_dock, old_shed, campsite]\n\n"
+        "Allowed Locations: [alex_farm, wheat_field, town_square, noah_shop, mia_bakery, emma_healer, leo_workshop, lake_dock, old_shed, campsite]\n"
+        "Note on social actions (talk, trade, help): If choosing talk/trade/help, specify 'target' as one of [alex, mia, noah, emma, leo].\n\n"
         "You MUST respond ONLY with a valid JSON object matching this exact format:\n"
         "{\n"
         '  "action": "work",\n'
@@ -47,7 +48,8 @@ def build_observation_prompt(
     agent: Dict[str, Any],
     world: Dict[str, Any],
     recent_memories: List[str],
-    nearby_agents: List[str]
+    nearby_agents: List[str],
+    relationships_text: Optional[str] = None
 ) -> str:
     time_str = format_time_string(world.get("time_minutes", 510))
     day = world.get("day", 1)
@@ -59,6 +61,8 @@ def build_observation_prompt(
     inventory_items = [f"{k}: {v}" for k, v in agent.get("inventory", {}).items()]
     inv_str = ", ".join(inventory_items) if inventory_items else "Empty pockets"
 
+    rel_section = f"Relationships:\n{relationships_text}\n\n" if relationships_text else ""
+
     return (
         f"Current World State:\n"
         f"- Time: Day {day}, {time_str} ({weather})\n"
@@ -67,7 +71,8 @@ def build_observation_prompt(
         f"- Happiness Level: {agent.get('happiness', 75)}/100\n"
         f"- Inventory: {inv_str}\n"
         f"- Nearby Villagers: {nearby_text}\n"
+        f"{rel_section}"
         f"Recent Experiences & Memories:\n"
         f"{memories_text}\n\n"
-        f"Based on your personality ({agent.get('name')}, {agent.get('occupation')}), current energy, and the time of day, what is your next action?"
+        f"Based on your personality ({agent.get('name')}, {agent.get('occupation')}), energy, and relationships, what is your next action?"
     )

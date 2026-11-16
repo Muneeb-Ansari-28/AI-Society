@@ -70,6 +70,21 @@ export const api = {
     return await res.json();
   },
 
+  async getAgentRelationships(agentId: string): Promise<Record<string, any>> {
+    const res = await fetch(`${API_BASE}/api/agents/${agentId}/relationships`);
+    if (!res.ok) throw new Error(`Failed to fetch relationships for ${agentId}`);
+    return await res.json();
+  },
+
+  async triggerConversation(agentId: string, targetId: string): Promise<any> {
+    const res = await fetch(`${API_BASE}/api/agents/${agentId}/converse/${targetId}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+    });
+    if (!res.ok) throw new Error(`Failed to trigger conversation between ${agentId} and ${targetId}`);
+    return await res.json();
+  },
+
   async triggerDecision(agentId: string): Promise<DecisionResponse> {
     const res = await fetch(`${API_BASE}/api/agents/${agentId}/decide`, {
       method: 'POST',

@@ -1,10 +1,12 @@
 import asyncio
 import logging
-from typing import Optional, List
+from typing import Optional, List, Dict
 from ..database.session import SessionLocal
 from ..database.repository import Repository
 from ..agents.decision_engine import DecisionEngine
 from .action_executor import ActionExecutor
+from ..social.relationship_manager import RelationshipManager
+from ..social.conversation import ConversationEngine
 from ..api.websocket import manager
 from ..config import SIMULATION_TICK_SECONDS
 
@@ -15,9 +17,10 @@ class SimulationScheduler:
         self.is_running = True
         self.speed = 1.0
         self.task: Optional[asyncio.Task] = None
-        # Agent rotation list (Focus on Alex for Phase 2 AI loop, with other villagers scheduled)
+        # Staggered round-robin queue across all 5 agents
         self.agent_queue: List[str] = ["alex", "mia", "noah", "emma", "leo"]
         self.current_agent_index = 0
+        self.last_conversation_time: Dict[str, float] = {}
 
     def start(self):
         if not self.task or self.task.done():
@@ -40,7 +43,7 @@ class SimulationScheduler:
     async def _run_loop(self):
         while True:
             try:
-                # Delay based on simulation speed (e.g. 6s at 1x, 3s at 2x)
+                # Delay based on simulation speed (e.g. 3.5s at 1x)
                 delay = max(2.0, SIMULATION_TICK_SECONDS / self.speed)
                 await asyncio.sleep(delay)
 
@@ -49,7 +52,7 @@ class SimulationScheduler:
 
                 db = SessionLocal()
                 try:
-                    # 1. Advance simulation time
+                    # 1. Advance simulation clock (2 minutes per tick)
                     Repository.update_world_time(db, delta_minutes=2)
                     world = Repository.get_world_state(db)
 
@@ -59,8 +62,7 @@ class SimulationScheduler:
                         "data": world
                     })
 
-                    # 2. Select agent for this AI decision cycle
-                    # Phase 2 prioritizes Alex every other tick to make his AI loop immediately evident
+                    # 2. Select next agent from round-robin queue
                     agent_id = self.agent_queue[self.current_agent_index]
                     self.current_agent_index = (self.current_agent_index + 1) % len(self.agent_queue)
 
@@ -68,20 +70,25 @@ class SimulationScheduler:
                     if not agent:
                         continue
 
-                    # 3. Retrieve memories and nearby agents
+                    # 3. Retrieve memories, nearby agents, and relationship context
                     memories = Repository.get_agent_memories(db, agent_id, limit=4)
                     all_agents = Repository.get_all_agents(db)
-                    nearby = [
-                        a["name"] for a in all_agents
+                    nearby_agents = [
+                        a for a in all_agents
                         if a["id"] != agent_id and a["location"] == agent["location"]
                     ]
+                    nearby_names = [a["name"] for a in nearby_agents]
+                    nearby_ids = [a["id"] for a in nearby_agents]
+
+                    rel_text = RelationshipManager.get_relationship_prompt_text(db, agent_id, nearby_ids)
 
                     # 4. Generate AI decision using Ollama Llama 3.2
                     decision = await DecisionEngine.decide_next_action(
                         agent=agent,
                         world=world,
                         memories=memories,
-                        nearby_agents=nearby
+                        nearby_agents=nearby_names,
+                        relationships_text=rel_text
                     )
 
                     # 5. Execute action & update database
@@ -93,7 +100,31 @@ class SimulationScheduler:
                         "data": result
                     })
 
-                    # 7. Broadcast event log
+                    # 7. Check if a dynamic agent conversation should be triggered
+                    target_id = result.get("target")
+                    partner = Repository.get_agent(db, target_id) if target_id else (nearby_agents[0] if nearby_agents else None)
+
+                    if partner and (result["action"] in ["talk", "help", "trade"] or (nearby_agents and result["action"] == "idle")):
+                        pair_key = "_".join(sorted([agent_id, partner["id"]]))
+                        now = asyncio.get_event_loop().time()
+                        last_time = self.last_conversation_time.get(pair_key, 0)
+
+                        # 40-second cooldown per pair to keep conversations natural
+                        if now - last_time > (40.0 / self.speed):
+                            self.last_conversation_time[pair_key] = now
+                            convo = await ConversationEngine.generate_conversation(
+                                db=db,
+                                agent_a=agent,
+                                agent_b=partner,
+                                location_name=result["location"],
+                                initial_topic=decision.get("reason")
+                            )
+                            await manager.broadcast({
+                                "type": "agent_conversation",
+                                "data": convo
+                            })
+
+                    # 8. Broadcast event log
                     await manager.broadcast({
                         "type": "event_logged",
                         "data": {

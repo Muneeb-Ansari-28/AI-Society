@@ -104,6 +104,9 @@ class SimulationWebSocket {
       case 'agent_action':
         EventBus.emit('backend-agent-action', msg.data);
         break;
+      case 'agent_conversation':
+        EventBus.emit('backend-agent-conversation', msg.data);
+        break;
       case 'world_tick':
         EventBus.emit('backend-world-tick', msg.data);
         break;

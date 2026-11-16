@@ -296,6 +296,50 @@ export class VillageScene extends Phaser.Scene {
       }
     });
 
+    // Backend AI dynamic agent-to-agent conversation execution
+    EventBus.on('backend-agent-conversation', (data: any) => {
+      if (!data || !data.initiator_id || !data.receiver_id) return;
+      const a = this.characters.get(data.initiator_id);
+      const b = this.characters.get(data.receiver_id);
+      if (!a || !b) return;
+
+      // Face each other
+      if (a.x < b.x) {
+        a.face('right');
+        b.face('left');
+      } else {
+        a.face('left');
+        b.face('right');
+      }
+
+      a.setAction('talk', `Talking with ${b.agentName}`);
+      b.setAction('talk', `Talking with ${a.agentName}`);
+
+      const lineA = data.dialogue?.[0]?.text || 'Good day!';
+      const lineB = data.dialogue?.[1]?.text || 'Good to see you!';
+
+      a.say(lineA, 4000);
+      this.time.delayedCall(4200, () => {
+        b.say(lineB, 4000);
+      });
+
+      this.time.delayedCall(8500, () => {
+        if (a.stateData.currentAction === 'talk') a.setAction('idle', 'Resting after chat');
+        if (b.stateData.currentAction === 'talk') b.setAction('idle', 'Resting after chat');
+        this.broadcastAgentStates();
+      });
+
+      this.logEvent(
+        'social',
+        `${a.agentName} & ${b.agentName}`,
+        'conversation',
+        `[${data.topic}] "${lineA}" — "${lineB}"`
+      );
+
+      EventBus.emit('conversation-logged', data);
+      this.broadcastAgentStates();
+    });
+
     // Backend world tick synchronization
     EventBus.on('backend-world-tick', (data: any) => {
       if (data) {

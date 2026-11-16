@@ -1,13 +1,15 @@
 from typing import Dict, Any, Optional
 from sqlalchemy.orm import Session
 from ..database.repository import Repository
+from ..social.relationship_manager import RelationshipManager
 from ..llm.prompts import format_time_string
 
 class ActionExecutor:
     @staticmethod
     def execute(db: Session, agent_id: str, decision: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Validates simulation rules, updates database state, logs events, and returns execution result.
+        Validates simulation rules, updates database state, logs events, applies social/inventory deltas,
+        and returns the execution result.
         """
         agent = Repository.get_agent(db, agent_id)
         if not agent:
@@ -17,7 +19,16 @@ class ActionExecutor:
         location = decision.get("location", agent["location"])
         reason = decision.get("reason", "")
         dialogue = decision.get("dialogue")
-        target = decision.get("target")
+        raw_target = decision.get("target")
+
+        # Resolve target ID to valid agent if provided
+        target_id: Optional[str] = None
+        if raw_target:
+            t_clean = str(raw_target).lower().strip()
+            for possible_id in ["alex", "mia", "noah", "emma", "leo"]:
+                if possible_id in t_clean and possible_id != agent_id:
+                    target_id = possible_id
+                    break
 
         world = Repository.get_world_state(db)
         time_str = format_time_string(world.get("time_minutes", 510))
@@ -28,6 +39,8 @@ class ActionExecutor:
         action_detail = ""
         memory_text: Optional[str] = None
         importance = 0.3
+        target_agent = Repository.get_agent(db, target_id) if target_id else None
+        target_name = target_agent["name"] if target_agent else (raw_target or "villagers")
 
         if action == "move":
             action_detail = f"Walking to {location}"
@@ -45,7 +58,7 @@ class ActionExecutor:
                 importance = 0.6
             elif agent_id == "mia":
                 action_detail = "Baking fresh sourdough bread"
-                inventory_delta = {"bread": 1}
+                inventory_delta = {"food": 1} # bread/food
                 description = "Baked warm crusty sourdough loaves."
                 memory_text = "Baked fresh sourdough bread in the morning oven."
                 importance = 0.6
@@ -57,7 +70,7 @@ class ActionExecutor:
                 importance = 0.5
             elif agent_id == "emma":
                 action_detail = "Gathering medicinal water herbs"
-                inventory_delta = {"herbs": 1}
+                inventory_delta = {"food": 1} # herbs/remedies
                 description = "Harvested soothing water lilies and medicinal mint by the lake."
                 memory_text = "Collected fresh medicinal plants for apothecary salves."
                 importance = 0.5
@@ -80,23 +93,82 @@ class ActionExecutor:
         elif action == "talk":
             energy_delta = -1
             happiness_delta = 4
-            action_detail = f"Speaking with {target or 'villagers'}"
-            description = f"Spoke with {target or 'fellow villagers'} at {location}."
+            action_detail = f"Speaking with {target_name}"
+            description = f"Spoke with {target_name} at {location}."
             if dialogue:
-                memory_text = f"Said to {target or 'the villagers'}: '{dialogue}'"
-                importance = 0.7
+                memory_text = f"Said to {target_name}: '{dialogue}'"
+                importance = 0.6
+
+            if target_id:
+                RelationshipManager.apply_social_interaction(
+                    db=db,
+                    source_id=agent_id,
+                    target_id=target_id,
+                    interaction_type="talk",
+                    topic=reason or "daily village life"
+                )
 
         elif action == "trade":
             energy_delta = -2
             happiness_delta = 3
-            action_detail = f"Negotiating trade with {target or 'Noah'}"
-            description = f"Engaged in resource trade at {location}."
-            memory_text = f"Discussed trading terms and supplies at {location}."
+            partner_id = target_id or ("noah" if agent_id != "noah" else "alex")
+            partner = Repository.get_agent(db, partner_id)
+            partner_name = partner["name"] if partner else "Merchant Noah"
+
+            action_detail = f"Trading resources with {partner_name}"
+            description = f"Exchanged trading goods with {partner_name} at {location}."
+            memory_text = f"Successfully traded supplies with {partner_name}."
             importance = 0.7
+
+            # Resource exchange logic
+            inv_a = agent.get("inventory", {})
+            if partner:
+                if agent_id == "alex" and inv_a.get("food", 0) >= 1:
+                    inventory_delta = {"food": -1, "coins": 2}
+                    Repository.update_agent_state(db, partner_id, inventory_updates={"food": 1, "coins": -2})
+                elif agent_id == "mia" and inv_a.get("food", 0) >= 1:
+                    inventory_delta = {"food": -1, "coins": 2}
+                    Repository.update_agent_state(db, partner_id, inventory_updates={"food": 1, "coins": -2})
+                elif agent_id == "leo" and inv_a.get("wood", 0) >= 1:
+                    inventory_delta = {"wood": -1, "coins": 3}
+                    Repository.update_agent_state(db, partner_id, inventory_updates={"wood": 1, "coins": -3})
+                else:
+                    inventory_delta = {"coins": 1}
+
+                RelationshipManager.apply_social_interaction(
+                    db=db,
+                    source_id=agent_id,
+                    target_id=partner_id,
+                    interaction_type="trade",
+                    topic="supplies and coin exchange"
+                )
+
+        elif action == "help":
+            energy_delta = -3
+            happiness_delta = 5
+            helped_id = target_id or ("alex" if agent_id != "alex" else "mia")
+            helped_agent = Repository.get_agent(db, helped_id)
+            helped_name = helped_agent["name"] if helped_agent else "a fellow villager"
+
+            action_detail = f"Assisting {helped_name} with daily tasks"
+            description = f"Helped {helped_name} with their chores at {location}."
+            memory_text = f"Lent a helping hand to {helped_name}."
+            importance = 0.7
+
+            if helped_agent:
+                # Boost helped agent's energy & happiness
+                Repository.update_agent_state(db, helped_id, energy_delta=8, happiness_delta=6)
+                RelationshipManager.apply_social_interaction(
+                    db=db,
+                    source_id=agent_id,
+                    target_id=helped_id,
+                    interaction_type="help",
+                    topic="community chore support"
+                )
 
         else: # idle
             action_detail = "Observing village surroundings"
-            description = f"Stood at {location} observing the morning breeze."
+            description = f"Stood at {location} enjoying the morning air."
 
         # Apply state updates to database
         Repository.update_agent_state(
@@ -110,7 +182,7 @@ class ActionExecutor:
             inventory_updates=inventory_delta if inventory_delta else None
         )
 
-        # Log event
+        # Log event in global history
         Repository.add_event(
             db=db,
             agent_id=agent_id,
@@ -129,7 +201,7 @@ class ActionExecutor:
                 text=memory_text,
                 importance=importance,
                 event_type=action,
-                related_agent=target
+                related_agent=target_id or raw_target
             )
 
         updated_agent = Repository.get_agent(db, agent_id)
@@ -140,7 +212,7 @@ class ActionExecutor:
             "agent_name": agent["name"],
             "action": action,
             "location": location,
-            "target": target,
+            "target": target_id or raw_target,
             "reason": reason,
             "dialogue": dialogue,
             "action_detail": action_detail,
@@ -148,5 +220,6 @@ class ActionExecutor:
             "energy": updated_agent["energy"] if updated_agent else agent["energy"],
             "happiness": updated_agent["happiness"] if updated_agent else agent["happiness"],
             "inventory": updated_agent["inventory"] if updated_agent else agent["inventory"],
+            "relationships": updated_agent.get("relationships", {}),
             "time": time_str
         }

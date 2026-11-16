@@ -20,6 +20,14 @@ export interface AgentPersonality {
   workLocation: string;
 }
 
+export interface RelationshipInfo {
+  name: string;
+  occupation: string;
+  trust: number;
+  friendship: number;
+  last_interaction?: string;
+}
+
 export interface AgentState {
   id: string;
   name: string;
@@ -34,7 +42,7 @@ export interface AgentState {
   x: number;
   y: number;
   inventory: Record<string, number>;
-  relationships: Record<string, { trust: number; friendship: number }>;
+  relationships: Record<string, RelationshipInfo>;
   recentMemories: string[];
   dialogue?: string | null;
 }
@@ -56,6 +64,27 @@ export interface SimulationEvent {
   agentName: string;
   type: string;
   description: string;
+}
+
+export interface ConversationTurn {
+  speaker: string;
+  speaker_name: string;
+  text: string;
+}
+
+export interface ConversationEvent {
+  initiator_id: string;
+  initiator_name: string;
+  receiver_id: string;
+  receiver_name: string;
+  location: string;
+  topic: string;
+  dialogue: ConversationTurn[];
+  outcome: string;
+  trust_delta: number;
+  friendship_delta: number;
+  relationship: { trust: number; friendship: number; last_interaction?: string };
+  time: string;
 }
 
 export interface WorldState {

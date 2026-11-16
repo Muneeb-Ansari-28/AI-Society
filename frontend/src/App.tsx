@@ -5,6 +5,7 @@ import { VillageGame } from './components/VillageGame';
 import { AgentPanel } from './components/AgentPanel';
 import { EventLog } from './components/EventLog';
 import { LocationModal } from './components/LocationModal';
+import { ConversationCard } from './components/ConversationCard';
 import type { AgentState, SimulationEvent, VillageLocation, WorldState } from './types/simulation';
 import { EventBus } from './game/EventBus';
 import { simulationWs, type WSConnectionStatus } from './services/websocket';
@@ -132,6 +133,9 @@ export const App: React.FC = () => {
 
       {/* Bottom: Real-Time Event Log */}
       <EventLog events={events} />
+
+      {/* Floating Dynamic Conversation Card */}
+      <ConversationCard />
     </div>
   );
 };
