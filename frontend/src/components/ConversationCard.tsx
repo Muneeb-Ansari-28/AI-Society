@@ -76,7 +76,7 @@ export const ConversationCard: React.FC = () => {
                   {turn.speaker_name}
                 </span>
                 <p className="text-gray-200 text-xs leading-relaxed">
-                  "{turn.text}"
+                  {`"${turn.text}"`}
                 </p>
               </div>
             </div>

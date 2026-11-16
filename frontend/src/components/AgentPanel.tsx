@@ -442,7 +442,7 @@ export const AgentPanel: React.FC<AgentPanelProps> = ({ agent, onClose }) => {
 
                       {rel.last_interaction && (
                         <p className="text-[10px] text-gray-400 italic bg-gray-900/60 p-1.5 rounded border border-gray-800/60 leading-tight">
-                          "{rel.last_interaction}"
+                          {`"${rel.last_interaction}"`}
                         </p>
                       )}
                     </div>
