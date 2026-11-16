@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import type { AgentState } from '../types/simulation';
+import type { AgentState, RelationshipInfo } from '../types/simulation';
 import { AGENT_PERSONALITIES } from '../game/personalities';
 import { VILLAGE_LOCATIONS } from '../game/VillageLocations';
 import { EventBus } from '../game/EventBus';
@@ -352,8 +352,8 @@ export const AgentPanel: React.FC<AgentPanelProps> = ({ agent, onClose }) => {
             </div>
           </>
         ) : (
-          /* SOCIAL TIES & RELATIONSHIPS TAB */
           <div className="space-y-3">
+            {/* SOCIAL TIES & RELATIONSHIPS TAB */}
             <div className="flex items-center justify-between">
               <h4 className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider flex items-center gap-1">
                 <Users size={13} className="text-emerald-400" />
@@ -366,7 +366,12 @@ export const AgentPanel: React.FC<AgentPanelProps> = ({ agent, onClose }) => {
               {Object.entries(AGENT_PERSONALITIES)
                 .filter(([otherId]) => otherId !== agent.id)
                 .map(([otherId, otherProfile]) => {
-                  const rel = agent.relationships?.[otherId] || { trust: 50, friendship: 50 };
+                  const rel: RelationshipInfo = agent.relationships?.[otherId] || {
+                    name: otherProfile.name,
+                    occupation: otherProfile.occupation,
+                    trust: 50,
+                    friendship: 50,
+                  };
                   const isBusy = conversingWith === otherId;
 
                   return (
@@ -442,7 +447,7 @@ export const AgentPanel: React.FC<AgentPanelProps> = ({ agent, onClose }) => {
 
                       {rel.last_interaction && (
                         <p className="text-[10px] text-gray-400 italic bg-gray-900/60 p-1.5 rounded border border-gray-800/60 leading-tight">
-                          {`"${rel.last_interaction}"`}
+                          &ldquo;{rel.last_interaction}&rdquo;
                         </p>
                       )}
                     </div>
