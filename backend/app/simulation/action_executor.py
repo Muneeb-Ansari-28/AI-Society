@@ -3,6 +3,8 @@ from sqlalchemy.orm import Session
 from ..database.repository import Repository
 from ..social.relationship_manager import RelationshipManager
 from ..llm.prompts import format_time_string
+from ..memory.memory_manager import memory_manager
+from ..memory.promise_tracker import promise_tracker
 
 class ActionExecutor:
     @staticmethod
@@ -193,15 +195,58 @@ class ActionExecutor:
             timestamp=time_str
         )
 
-        # Store memory if meaningful
+        # Check if this action fulfills any pending commitments/promises
+        fulfilled_promises = promise_tracker.check_and_fulfill(
+            db=db,
+            agent_id=agent_id,
+            action=action,
+            action_detail=action_detail,
+            location=location,
+            target_agent=target_id,
+        )
+
+        for p in fulfilled_promises:
+            fulfill_note = f"Kept promise to {p['target_agent_id'].capitalize()}: '{p['content']}'"
+            memory_manager.add_memory(
+                db=db,
+                agent_id=agent_id,
+                text=fulfill_note,
+                event_type="promise",
+                related_agent=p["target_agent_id"],
+                location=location,
+                day=world.get("day", 1),
+                is_promise=True,
+            )
+            # Boost relationship trust for keeping promise
+            RelationshipManager.apply_social_interaction(
+                db=db,
+                source_id=agent_id,
+                target_id=p["target_agent_id"],
+                interaction_type="help",
+                topic=f"kept promise: {p['content'][:30]}",
+                custom_trust_delta=6,
+                custom_friendship_delta=4,
+            )
+            Repository.add_event(
+                db=db,
+                agent_id=agent_id,
+                agent_name=agent["name"],
+                event_type="promise_fulfilled",
+                description=f"Fulfilled commitment to {p['target_agent_id'].capitalize()}: \"{p['content']}\"",
+                location=location,
+                timestamp=time_str,
+            )
+
+        # Store experience in MemoryManager (with ChromaDB vector indexing)
         if memory_text:
-            Repository.add_memory(
+            memory_manager.add_memory(
                 db=db,
                 agent_id=agent_id,
                 text=memory_text,
-                importance=importance,
                 event_type=action,
-                related_agent=target_id or raw_target
+                related_agent=target_id or raw_target,
+                location=location,
+                day=world.get("day", 1),
             )
 
         updated_agent = Repository.get_agent(db, agent_id)
@@ -221,5 +266,6 @@ class ActionExecutor:
             "happiness": updated_agent["happiness"] if updated_agent else agent["happiness"],
             "inventory": updated_agent["inventory"] if updated_agent else agent["inventory"],
             "relationships": updated_agent.get("relationships", {}),
+            "fulfilled_promises": fulfilled_promises,
             "time": time_str
         }

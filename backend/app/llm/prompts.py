@@ -49,19 +49,30 @@ def build_observation_prompt(
     world: Dict[str, Any],
     recent_memories: List[str],
     nearby_agents: List[str],
-    relationships_text: Optional[str] = None
+    relationships_text: Optional[str] = None,
+    promises_text: Optional[str] = None,
+    semantic_memories_text: Optional[str] = None,
 ) -> str:
     time_str = format_time_string(world.get("time_minutes", 510))
     day = world.get("day", 1)
     weather = world.get("weather", "Sunny")
 
-    memories_text = "\n".join([f"- {m}" for m in recent_memories]) if recent_memories else "- Settled into the peaceful village."
     nearby_text = ", ".join(nearby_agents) if nearby_agents else "None nearby"
 
     inventory_items = [f"{k}: {v}" for k, v in agent.get("inventory", {}).items()]
     inv_str = ", ".join(inventory_items) if inventory_items else "Empty pockets"
 
     rel_section = f"Relationships:\n{relationships_text}\n\n" if relationships_text else ""
+
+    promises_section = ""
+    if promises_text and "No pending promises" not in promises_text:
+        promises_section = f"Active Promises & Commitments:\n{promises_text}\n\n"
+
+    long_term_section = ""
+    if semantic_memories_text and semantic_memories_text.strip():
+        long_term_section = f"Relevant Past Experiences (Retrieved from Long-Term Memory):\n{semantic_memories_text}\n\n"
+
+    short_term_text = "\n".join([f"- {m}" for m in recent_memories]) if recent_memories else "- Settled into the peaceful village."
 
     return (
         f"Current World State:\n"
@@ -70,9 +81,11 @@ def build_observation_prompt(
         f"- Energy Level: {agent.get('energy', 100)}/100\n"
         f"- Happiness Level: {agent.get('happiness', 75)}/100\n"
         f"- Inventory: {inv_str}\n"
-        f"- Nearby Villagers: {nearby_text}\n"
+        f"- Nearby Villagers: {nearby_text}\n\n"
         f"{rel_section}"
-        f"Recent Experiences & Memories:\n"
-        f"{memories_text}\n\n"
-        f"Based on your personality ({agent.get('name')}, {agent.get('occupation')}), energy, and relationships, what is your next action?"
+        f"{promises_section}"
+        f"{long_term_section}"
+        f"Recent Observations (Short-Term Memory):\n"
+        f"{short_term_text}\n\n"
+        f"Based on your personality ({agent.get('name')}, {agent.get('occupation')}), active promises, memories, and energy, what is your next action?"
     )

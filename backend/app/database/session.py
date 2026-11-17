@@ -19,3 +19,19 @@ def get_db():
 
 def init_db():
     Base.metadata.create_all(bind=engine)
+
+    # Auto-migrate SQLite columns if table already exists
+    if "sqlite" in DATABASE_URL:
+        with engine.connect() as conn:
+            # Check memories table columns
+            cursor = conn.connection.cursor()
+            cursor.execute("PRAGMA table_info(memories)")
+            columns = [row[1] for row in cursor.fetchall()]
+
+            if "location" not in columns:
+                cursor.execute("ALTER TABLE memories ADD COLUMN location VARCHAR(100) DEFAULT ''")
+            if "day" not in columns:
+                cursor.execute("ALTER TABLE memories ADD COLUMN day INTEGER DEFAULT 1")
+            if "is_promise" not in columns:
+                cursor.execute("ALTER TABLE memories ADD COLUMN is_promise BOOLEAN DEFAULT 0")
+            conn.connection.commit()

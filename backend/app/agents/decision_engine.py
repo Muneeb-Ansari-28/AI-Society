@@ -16,7 +16,9 @@ class DecisionEngine:
         world: Dict[str, Any],
         memories: List[str],
         nearby_agents: List[str],
-        relationships_text: Optional[str] = None
+        relationships_text: Optional[str] = None,
+        promises_text: Optional[str] = None,
+        semantic_memories_text: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         Runs the full AI decision cycle for an agent:
@@ -24,7 +26,13 @@ class DecisionEngine:
         """
         system_prompt = build_system_prompt(agent)
         observation_prompt = build_observation_prompt(
-            agent, world, memories, nearby_agents, relationships_text=relationships_text
+            agent,
+            world,
+            memories,
+            nearby_agents,
+            relationships_text=relationships_text,
+            promises_text=promises_text,
+            semantic_memories_text=semantic_memories_text,
         )
 
         # 1. Low energy safety rule (simulation mechanic)

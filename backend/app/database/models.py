@@ -69,6 +69,21 @@ class MemoryModel(Base):
     importance = Column(Float, default=0.5)
     event_type = Column(String(50), default="observation")
     related_agent = Column(String(50), nullable=True)
+    location = Column(String(100), default="")
+    day = Column(Integer, default=1)
+    is_promise = Column(Boolean, default=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+class PromiseModel(Base):
+    __tablename__ = "promises"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    agent_id = Column(String(50), nullable=False) # Promiser
+    target_agent_id = Column(String(50), nullable=False) # Beneficiary / Promisee
+    content = Column(Text, nullable=False)
+    day_made = Column(Integer, default=1)
+    deadline_day = Column(Integer, default=2)
+    status = Column(String(20), default="active") # active, fulfilled, expired
     created_at = Column(DateTime, default=datetime.utcnow)
 
 class WorldStateModel(Base):

@@ -1,7 +1,7 @@
 import json
 from typing import List, Dict, Any, Optional
 from sqlalchemy.orm import Session
-from .models import AgentModel, AgentStateModel, EventModel, MemoryModel, RelationshipModel, WorldStateModel
+from .models import AgentModel, AgentStateModel, EventModel, MemoryModel, PromiseModel, RelationshipModel, WorldStateModel
 from ..agents.personalities import AGENT_PROFILES
 
 DEFAULT_RELATIONSHIPS = [
@@ -253,21 +253,126 @@ class Repository:
         ]
 
     @staticmethod
-    def add_memory(db: Session, agent_id: str, text: str, importance: float = 0.5, event_type: str = "event", related_agent: Optional[str] = None):
+    def add_memory(
+        db: Session,
+        agent_id: str,
+        text: str,
+        importance: float = 0.5,
+        event_type: str = "event",
+        related_agent: Optional[str] = None,
+        location: str = "",
+        day: int = 1,
+        is_promise: bool = False,
+    ) -> MemoryModel:
         mem = MemoryModel(
             agent_id=agent_id,
             text=text,
             importance=importance,
             event_type=event_type,
             related_agent=related_agent,
+            location=location,
+            day=day,
+            is_promise=is_promise,
         )
         db.add(mem)
         db.commit()
+        db.refresh(mem)
+        return mem
 
     @staticmethod
-    def get_agent_memories(db: Session, agent_id: str, limit: int = 5) -> List[str]:
+    def get_agent_memories(db: Session, agent_id: str, limit: int = 10) -> List[str]:
         memories = db.query(MemoryModel).filter(MemoryModel.agent_id == agent_id).order_by(MemoryModel.id.desc()).limit(limit).all()
         return [m.text for m in memories]
+
+    @staticmethod
+    def get_agent_memory_details(db: Session, agent_id: str, limit: int = 25) -> List[Dict[str, Any]]:
+        memories = db.query(MemoryModel).filter(MemoryModel.agent_id == agent_id).order_by(MemoryModel.id.desc()).limit(limit).all()
+        return [
+            {
+                "id": m.id,
+                "agent_id": m.agent_id,
+                "text": m.text,
+                "importance": round(m.importance, 2),
+                "event_type": m.event_type,
+                "related_agent": m.related_agent,
+                "location": m.location,
+                "day": m.day,
+                "is_promise": bool(m.is_promise),
+                "created_at": m.created_at.isoformat() if m.created_at else None,
+            }
+            for m in memories
+        ]
+
+    @staticmethod
+    def create_promise(
+        db: Session,
+        agent_id: str,
+        target_agent_id: str,
+        content: str,
+        day_made: int = 1,
+        deadline_day: int = 2,
+        status: str = "active",
+    ) -> PromiseModel:
+        promise = PromiseModel(
+            agent_id=agent_id,
+            target_agent_id=target_agent_id,
+            content=content,
+            day_made=day_made,
+            deadline_day=deadline_day,
+            status=status,
+        )
+        db.add(promise)
+        db.commit()
+        db.refresh(promise)
+        return promise
+
+    @staticmethod
+    def get_active_promises(db: Session, agent_id: Optional[str] = None) -> List[Dict[str, Any]]:
+        query = db.query(PromiseModel).filter(PromiseModel.status == "active")
+        if agent_id:
+            query = query.filter((PromiseModel.agent_id == agent_id) | (PromiseModel.target_agent_id == agent_id))
+        promises = query.order_by(PromiseModel.id.desc()).all()
+        return [
+            {
+                "id": p.id,
+                "agent_id": p.agent_id,
+                "target_agent_id": p.target_agent_id,
+                "content": p.content,
+                "day_made": p.day_made,
+                "deadline_day": p.deadline_day,
+                "status": p.status,
+                "created_at": p.created_at.isoformat() if p.created_at else None,
+            }
+            for p in promises
+        ]
+
+    @staticmethod
+    def get_all_promises_for_agent(db: Session, agent_id: str) -> List[Dict[str, Any]]:
+        promises = db.query(PromiseModel).filter(
+            (PromiseModel.agent_id == agent_id) | (PromiseModel.target_agent_id == agent_id)
+        ).order_by(PromiseModel.id.desc()).all()
+        return [
+            {
+                "id": p.id,
+                "agent_id": p.agent_id,
+                "target_agent_id": p.target_agent_id,
+                "content": p.content,
+                "day_made": p.day_made,
+                "deadline_day": p.deadline_day,
+                "status": p.status,
+                "created_at": p.created_at.isoformat() if p.created_at else None,
+            }
+            for p in promises
+        ]
+
+    @staticmethod
+    def update_promise_status(db: Session, promise_id: int, status: str) -> bool:
+        p = db.query(PromiseModel).filter(PromiseModel.id == promise_id).first()
+        if p:
+            p.status = status
+            db.commit()
+            return True
+        return False
 
     @staticmethod
     def get_world_state(db: Session) -> Dict[str, Any]:

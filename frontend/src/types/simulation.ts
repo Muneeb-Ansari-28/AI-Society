@@ -28,6 +28,31 @@ export interface RelationshipInfo {
   last_interaction?: string;
 }
 
+export interface MemoryItem {
+  id: number;
+  agent_id: string;
+  text: string;
+  importance: number;
+  event_type: string;
+  related_agent?: string | null;
+  location?: string;
+  day?: number;
+  is_promise?: boolean;
+  created_at?: string;
+  similarity?: number;
+}
+
+export interface PromiseItem {
+  id: number;
+  agent_id: string;
+  target_agent_id: string;
+  content: string;
+  day_made: number;
+  deadline_day: number;
+  status: 'active' | 'fulfilled' | 'broken';
+  created_at?: string;
+}
+
 export interface AgentState {
   id: string;
   name: string;

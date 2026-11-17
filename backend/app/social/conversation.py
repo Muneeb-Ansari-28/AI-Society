@@ -5,6 +5,8 @@ from sqlalchemy.orm import Session
 from ..database.repository import Repository
 from ..llm.ollama_client import ollama_client
 from .relationship_manager import RelationshipManager
+from ..memory.memory_manager import memory_manager
+from ..memory.promise_tracker import promise_tracker
 
 logger = logging.getLogger("tiny_society.conversation")
 
@@ -19,11 +21,36 @@ class ConversationEngine:
     ) -> Dict[str, Any]:
         """
         Generates an authentic in-character two-stage conversation between two villagers using Ollama Llama 3.2.
-        Updates their relationships, stores mutual memories, and logs the event.
+        Updates their relationships, stores mutual memories, checks for promises made, and logs the event.
         """
         rel = Repository.get_relationship(db, agent_a["id"], agent_b["id"]) or {"trust": 50, "friendship": 50}
-        memories_a = Repository.get_agent_memories(db, agent_a["id"], limit=3)
-        memories_b = Repository.get_agent_memories(db, agent_b["id"], limit=3)
+        world = Repository.get_world_state(db)
+        current_day = world.get("day", 1)
+
+        # Semantic memories relevant to the other villager
+        memories_a_objs = memory_manager.search_relevant_memories(
+            db=db,
+            agent_id=agent_a["id"],
+            query=f"Interactions, trades, and history with {agent_b['name']}",
+            n_results=2
+        )
+        memories_b_objs = memory_manager.search_relevant_memories(
+            db=db,
+            agent_id=agent_b["id"],
+            query=f"Interactions, trades, and history with {agent_a['name']}",
+            n_results=2
+        )
+        memories_a = [m["text"] for m in memories_a_objs]
+        memories_b = [m["text"] for m in memories_b_objs]
+
+        # Active promises between these two
+        all_promises = Repository.get_active_promises(db, agent_id=agent_a["id"])
+        pair_promises = [
+            p for p in all_promises
+            if (p["agent_id"] == agent_a["id"] and p["target_agent_id"] == agent_b["id"]) or
+               (p["agent_id"] == agent_b["id"] and p["target_agent_id"] == agent_a["id"])
+        ]
+        promises_prompt = promise_tracker.format_promises_for_prompt(pair_promises, agent_a["id"])
 
         system_prompt = (
             "You are the dynamic dialogue director for the peaceful village simulation 'Tiny Society'.\n"
@@ -31,6 +58,7 @@ class ConversationEngine:
             "Turn 1: Person A initiates.\n"
             "Turn 2: Person B responds in character.\n"
             "Stay strictly in character for both individuals. Keep each spoken line between 1 and 2 brief sentences.\n"
+            "Villagers may discuss work, request items, or make commitments ('I'll bring you...').\n"
             "You MUST respond ONLY with a JSON object matching this schema:\n"
             "{\n"
             '  "topic": "brief topic of discussion",\n'
@@ -45,18 +73,21 @@ class ConversationEngine:
             "No conversational preamble, markdown markers, or text outside the JSON."
         )
 
+        promises_sec = f"Existing Commitments between you:\n{promises_prompt}\n\n" if pair_promises else ""
+
         user_prompt = (
             f"Location: {location_name}\n\n"
             f"Person A:\n"
             f"- Name: {agent_a['name']} ({agent_a['occupation']})\n"
             f"- Personality: {agent_a['personality']}\n"
             f"- Goal: {agent_a['goals']}\n"
-            f"- Recent Memories: {', '.join(memories_a) if memories_a else 'Working hard in the village'}\n\n"
+            f"- Relevant Memories: {', '.join(memories_a) if memories_a else 'Working hard in the village'}\n\n"
             f"Person B:\n"
             f"- Name: {agent_b['name']} ({agent_b['occupation']})\n"
             f"- Personality: {agent_b['personality']}\n"
             f"- Goal: {agent_b['goals']}\n"
-            f"- Recent Memories: {', '.join(memories_b) if memories_b else 'Going about daily village chores'}\n\n"
+            f"- Relevant Memories: {', '.join(memories_b) if memories_b else 'Going about daily village chores'}\n\n"
+            f"{promises_sec}"
             f"Current Relationship: Friendship {rel.get('friendship', 50)}/100, Trust {rel.get('trust', 50)}/100.\n"
             f"Suggested context/topic: {initial_topic or 'daily village work, supplies, or weather'}.\n\n"
             f"Generate their authentic 2-turn dialogue now."
@@ -99,26 +130,47 @@ class ConversationEngine:
             custom_friendship_delta=friendship_delta
         )
 
-        # Store memories for both agents
-        Repository.add_memory(
+        # Check for promises made in dialogue
+        new_promise_a = promise_tracker.record_promise_if_detected(
+            db=db,
+            speaker_id=agent_a["id"],
+            listener_id=agent_b["id"],
+            dialogue_text=line_a,
+            current_day=current_day,
+        )
+        new_promise_b = promise_tracker.record_promise_if_detected(
+            db=db,
+            speaker_id=agent_b["id"],
+            listener_id=agent_a["id"],
+            dialogue_text=line_b,
+            current_day=current_day,
+        )
+
+        detected_promise = new_promise_a or new_promise_b
+
+        # Store memories for both agents in MemoryManager (with ChromaDB indexing)
+        memory_manager.add_memory(
             db=db,
             agent_id=agent_a["id"],
             text=f"Spoke with {agent_b['name']} about {topic}: '{line_a}'",
-            importance=0.6,
-            event_type="talk",
-            related_agent=agent_b["id"]
+            event_type="promise" if new_promise_a else "conversation",
+            related_agent=agent_b["id"],
+            location=location_name,
+            day=current_day,
+            is_promise=bool(new_promise_a),
         )
-        Repository.add_memory(
+        memory_manager.add_memory(
             db=db,
             agent_id=agent_b["id"],
             text=f"Discussed {topic} with {agent_a['name']}: '{line_b}'",
-            importance=0.6,
-            event_type="talk",
-            related_agent=agent_a["id"]
+            event_type="promise" if new_promise_b else "conversation",
+            related_agent=agent_a["id"],
+            location=location_name,
+            day=current_day,
+            is_promise=bool(new_promise_b),
         )
 
         # Log event in global simulation feed
-        world = Repository.get_world_state(db)
         from ..llm.prompts import format_time_string
         time_str = format_time_string(world.get("time_minutes", 510))
 
@@ -126,7 +178,7 @@ class ConversationEngine:
             db=db,
             agent_id=agent_a["id"],
             agent_name=f"{agent_a['name']} & {agent_b['name']}",
-            event_type="conversation",
+            event_type="promise" if detected_promise else "conversation",
             description=f"\"{line_a}\" — \"{line_b}\"",
             location=location_name,
             timestamp=time_str
@@ -147,6 +199,7 @@ class ConversationEngine:
             "trust_delta": trust_delta,
             "friendship_delta": friendship_delta,
             "relationship": updated_rel,
+            "promise": detected_promise,
             "time": time_str
         }
 

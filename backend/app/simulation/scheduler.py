@@ -7,6 +7,7 @@ from ..agents.decision_engine import DecisionEngine
 from .action_executor import ActionExecutor
 from ..social.relationship_manager import RelationshipManager
 from ..social.conversation import ConversationEngine
+from ..memory.memory_manager import memory_manager
 from ..api.websocket import manager
 from ..config import SIMULATION_TICK_SECONDS
 
@@ -70,8 +71,7 @@ class SimulationScheduler:
                     if not agent:
                         continue
 
-                    # 3. Retrieve memories, nearby agents, and relationship context
-                    memories = Repository.get_agent_memories(db, agent_id, limit=4)
+                    # 3. Retrieve memories, promises, nearby agents, and relationship context
                     all_agents = Repository.get_all_agents(db)
                     nearby_agents = [
                         a for a in all_agents
@@ -81,14 +81,23 @@ class SimulationScheduler:
                     nearby_ids = [a["id"] for a in nearby_agents]
 
                     rel_text = RelationshipManager.get_relationship_prompt_text(db, agent_id, nearby_ids)
+                    mem_context = memory_manager.build_agent_context(
+                        db=db,
+                        agent_id=agent_id,
+                        situation=f"At {agent['location']} with energy {agent['energy']}",
+                        nearby_agents=nearby_names,
+                        current_day=world.get("day", 1),
+                    )
 
                     # 4. Generate AI decision using Ollama Llama 3.2
                     decision = await DecisionEngine.decide_next_action(
                         agent=agent,
                         world=world,
-                        memories=memories,
+                        memories=[m["text"] for m in mem_context["recent_memories"]],
                         nearby_agents=nearby_names,
-                        relationships_text=rel_text
+                        relationships_text=rel_text,
+                        promises_text=mem_context["promises_text"],
+                        semantic_memories_text=mem_context["memories_text"],
                     )
 
                     # 5. Execute action & update database

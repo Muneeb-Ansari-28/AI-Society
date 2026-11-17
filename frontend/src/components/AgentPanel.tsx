@@ -1,9 +1,9 @@
-import React, { useState } from 'react';
-import type { AgentState, RelationshipInfo } from '../types/simulation';
+import React, { useState, useEffect } from 'react';
+import type { AgentState, RelationshipInfo, MemoryItem, PromiseItem } from '../types/simulation';
 import { AGENT_PERSONALITIES } from '../game/personalities';
 import { VILLAGE_LOCATIONS } from '../game/VillageLocations';
 import { EventBus } from '../game/EventBus';
-import { Heart, Zap, Crosshair, Send, MapPin, Package, X, Sparkles, Brain, Loader2, Users, MessageSquareQuote, Shield } from 'lucide-react';
+import { Heart, Zap, Crosshair, Send, MapPin, Package, X, Sparkles, Brain, Loader2, Users, MessageSquareQuote, Shield, Search, CheckCircle2, Clock, Handshake, RefreshCw } from 'lucide-react';
 import { api } from '../services/api';
 
 interface AgentPanelProps {
@@ -12,11 +12,43 @@ interface AgentPanelProps {
 }
 
 export const AgentPanel: React.FC<AgentPanelProps> = ({ agent, onClose }) => {
-  const [activeTab, setActiveTab] = useState<'status' | 'social'>('status');
+  const [activeTab, setActiveTab] = useState<'status' | 'social' | 'memory'>('status');
   const [chatInput, setChatInput] = useState('');
   const [isDeciding, setIsDeciding] = useState(false);
   const [isChatting, setIsChatting] = useState(false);
   const [conversingWith, setConversingWith] = useState<string | null>(null);
+
+  // Phase 4 Memory Architecture state
+  const [memorySearchQuery, setMemorySearchQuery] = useState('');
+  const [detailedMemories, setDetailedMemories] = useState<MemoryItem[]>([]);
+  const [searchResults, setSearchResults] = useState<MemoryItem[] | null>(null);
+  const [promises, setPromises] = useState<PromiseItem[]>([]);
+  const [isLoadingMemories, setIsLoadingMemories] = useState(false);
+  const [isSearching, setIsSearching] = useState(false);
+
+  const agentId = agent?.id;
+
+  useEffect(() => {
+    if (!agentId) return;
+    const fetchMemoryData = async () => {
+      setIsLoadingMemories(true);
+      try {
+        const [mems, prom] = await Promise.all([
+          api.getAgentMemories(agentId, 25),
+          api.getAgentPromises(agentId),
+        ]);
+        setDetailedMemories(mems);
+        setPromises(prom);
+      } catch (err) {
+        console.warn('Failed to fetch memory data:', err);
+      } finally {
+        setIsLoadingMemories(false);
+      }
+    };
+    if (activeTab === 'memory') {
+      fetchMemoryData();
+    }
+  }, [agentId, activeTab]);
 
   if (!agent) {
     return (
@@ -106,6 +138,36 @@ export const AgentPanel: React.FC<AgentPanelProps> = ({ agent, onClose }) => {
     EventBus.emit('focus-agent', agent.id);
   };
 
+  const handleMemorySearch = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!memorySearchQuery.trim() || !agent) return;
+    setIsSearching(true);
+    try {
+      const results = await api.searchAgentMemories(agent.id, memorySearchQuery.trim(), 5);
+      setSearchResults(results);
+    } catch (err) {
+      console.warn('Memory search failed:', err);
+    } finally {
+      setIsSearching(false);
+    }
+  };
+
+  const handleClearSearch = () => {
+    setMemorySearchQuery('');
+    setSearchResults(null);
+  };
+
+  const handleFulfillPromise = async (promiseId: number) => {
+    try {
+      await api.fulfillPromise(promiseId);
+      setPromises((prev) =>
+        prev.map((p) => (p.id === promiseId ? { ...p, status: 'fulfilled' as const } : p))
+      );
+    } catch (err) {
+      console.warn('Failed to fulfill promise:', err);
+    }
+  };
+
   return (
     <div className="w-84 bg-gray-900/95 border-l border-gray-800 flex flex-col h-full overflow-y-auto select-none">
       {/* Header */}
@@ -154,29 +216,40 @@ export const AgentPanel: React.FC<AgentPanelProps> = ({ agent, onClose }) => {
         </div>
       </div>
 
-      {/* Tabs: Status vs Social */}
-      <div className="flex border-b border-gray-800 text-xs font-semibold">
+      {/* Tabs: Status vs Social vs Mind */}
+      <div className="flex border-b border-gray-800 text-[11px] font-semibold">
         <button
           onClick={() => setActiveTab('status')}
-          className={`flex-1 py-2 text-center border-b-2 transition-colors flex items-center justify-center gap-1.5 ${
+          className={`flex-1 py-2 text-center border-b-2 transition-colors flex items-center justify-center gap-1 ${
             activeTab === 'status'
               ? 'border-emerald-500 text-emerald-400 bg-gray-950/40'
               : 'border-transparent text-gray-400 hover:text-gray-200'
           }`}
         >
           <span>📋</span>
-          <span>Status & Routine</span>
+          <span>Status</span>
         </button>
         <button
           onClick={() => setActiveTab('social')}
-          className={`flex-1 py-2 text-center border-b-2 transition-colors flex items-center justify-center gap-1.5 ${
+          className={`flex-1 py-2 text-center border-b-2 transition-colors flex items-center justify-center gap-1 ${
             activeTab === 'social'
               ? 'border-emerald-500 text-emerald-400 bg-gray-950/40'
               : 'border-transparent text-gray-400 hover:text-gray-200'
           }`}
         >
-          <Users size={13} />
-          <span>Social Ties</span>
+          <Users size={12} />
+          <span>Social</span>
+        </button>
+        <button
+          onClick={() => setActiveTab('memory')}
+          className={`flex-1 py-2 text-center border-b-2 transition-colors flex items-center justify-center gap-1 ${
+            activeTab === 'memory'
+              ? 'border-emerald-500 text-emerald-400 bg-gray-950/40'
+              : 'border-transparent text-gray-400 hover:text-gray-200'
+          }`}
+        >
+          <Brain size={12} className="text-purple-400" />
+          <span>Mind & Memory</span>
         </button>
       </div>
 
@@ -351,7 +424,7 @@ export const AgentPanel: React.FC<AgentPanelProps> = ({ agent, onClose }) => {
               </div>
             </div>
           </>
-        ) : (
+        ) : activeTab === 'social' ? (
           <div className="space-y-3">
             {/* SOCIAL TIES & RELATIONSHIPS TAB */}
             <div className="flex items-center justify-between">
@@ -453,6 +526,205 @@ export const AgentPanel: React.FC<AgentPanelProps> = ({ agent, onClose }) => {
                     </div>
                   );
                 })}
+            </div>
+          </div>
+        ) : (
+          /* MIND & MEMORY TAB (PHASE 4 ARCHITECTURE) */
+          <div className="space-y-3 text-xs">
+            {/* Semantic Memory Search (ChromaDB) */}
+            <div className="bg-gray-950/80 p-3 rounded-xl border border-gray-800 space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-semibold text-purple-400 uppercase tracking-wider flex items-center gap-1">
+                  <Search size={12} />
+                  <span>Semantic Vector Search</span>
+                </span>
+                <span className="text-[9px] text-gray-500 font-mono">ChromaDB + nomic</span>
+              </div>
+              <form onSubmit={handleMemorySearch} className="flex gap-1.5">
+                <input
+                  type="text"
+                  value={memorySearchQuery}
+                  onChange={(e) => setMemorySearchQuery(e.target.value)}
+                  placeholder="Query memories (e.g. bread, tools, deal)..."
+                  className="flex-1 bg-gray-900 border border-gray-800 rounded-lg px-2.5 py-1 text-xs text-gray-200 focus:outline-none focus:border-purple-500"
+                />
+                <button
+                  type="submit"
+                  disabled={isSearching || !memorySearchQuery.trim()}
+                  className="px-2 py-1 bg-purple-700 hover:bg-purple-600 disabled:opacity-50 text-white rounded-lg text-xs font-medium transition-colors flex items-center gap-1"
+                >
+                  {isSearching ? <Loader2 size={12} className="animate-spin" /> : <Search size={12} />}
+                </button>
+                {searchResults && (
+                  <button
+                    type="button"
+                    onClick={handleClearSearch}
+                    className="px-1.5 py-1 text-gray-400 hover:text-white text-xs bg-gray-800 rounded-lg"
+                    title="Clear search"
+                  >
+                    <X size={12} />
+                  </button>
+                )}
+              </form>
+
+              {/* Search Results Display */}
+              {searchResults && (
+                <div className="space-y-1.5 pt-1 border-t border-gray-800/80">
+                  <div className="flex justify-between text-[10px] text-gray-400">
+                    <span>Semantic Hits ({searchResults.length})</span>
+                    <span className="text-purple-400">Ranked by Vector Distance</span>
+                  </div>
+                  {searchResults.length === 0 ? (
+                    <p className="text-[11px] text-gray-500 italic py-1">No semantically similar memories found.</p>
+                  ) : (
+                    searchResults.map((hit, idx) => (
+                      <div key={idx} className="bg-gray-900/90 p-2 rounded-lg border border-purple-900/50 space-y-1">
+                        <div className="flex items-center justify-between text-[10px]">
+                          <span className="text-purple-300 font-medium">
+                            {hit.similarity ? `${Math.round(hit.similarity * 100)}% Match` : 'Relevant'}
+                          </span>
+                          <span className="text-amber-400 font-mono">⭐ {hit.importance}</span>
+                        </div>
+                        <p className="text-gray-200 text-[11px] leading-snug">{hit.text}</p>
+                      </div>
+                    ))
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Active Promises & Commitments */}
+            <div className="bg-gray-950/80 p-3 rounded-xl border border-gray-800 space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-semibold text-emerald-400 uppercase tracking-wider flex items-center gap-1">
+                  <Handshake size={12} />
+                  <span>Promises & Commitments</span>
+                </span>
+                <span className="text-[10px] text-gray-500 font-mono">
+                  {promises.filter((p) => p.status === 'active').length} Active
+                </span>
+              </div>
+
+              {promises.length === 0 ? (
+                <p className="text-[11px] text-gray-500 italic py-1">No active promises or debts currently recorded.</p>
+              ) : (
+                <div className="space-y-1.5">
+                  {promises.map((p) => {
+                    const isPromiser = p.agent_id === agent.id;
+                    const otherId = isPromiser ? p.target_agent_id : p.agent_id;
+                    const otherProf = AGENT_PERSONALITIES[otherId];
+
+                    return (
+                      <div
+                        key={p.id}
+                        className={`p-2 rounded-lg border text-[11px] space-y-1 ${
+                          p.status === 'fulfilled'
+                            ? 'bg-emerald-950/20 border-emerald-900/40 text-gray-400'
+                            : 'bg-gray-900/90 border-gray-800 text-gray-200'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between text-[10px]">
+                          <span className="font-semibold text-gray-300 flex items-center gap-1">
+                            <span>{otherProf?.avatar || '👤'}</span>
+                            <span>{isPromiser ? `Promised ${otherProf?.name || otherId}` : `${otherProf?.name || otherId} promised`}</span>
+                          </span>
+                          <span className="flex items-center gap-1 font-mono text-[9px]">
+                            <Clock size={10} className="text-gray-500" />
+                            <span>Due Day {p.deadline_day}</span>
+                          </span>
+                        </div>
+                        <p className="text-emerald-200/90 leading-snug">&ldquo;{p.content}&rdquo;</p>
+                        <div className="flex items-center justify-between pt-1">
+                          <span
+                            className={`text-[9px] px-1.5 py-0.5 rounded-full font-medium ${
+                              p.status === 'fulfilled'
+                                ? 'bg-emerald-900/60 text-emerald-300 border border-emerald-700/60'
+                                : 'bg-amber-950/60 text-amber-300 border border-amber-800/80'
+                            }`}
+                          >
+                            {p.status === 'fulfilled' ? '✓ Fulfilled' : '⏳ Active'}
+                          </span>
+                          {p.status === 'active' && isPromiser && (
+                            <button
+                              onClick={() => handleFulfillPromise(p.id)}
+                              className="text-[9px] text-emerald-400 hover:text-emerald-300 flex items-center gap-0.5 bg-emerald-950/60 px-1.5 py-0.5 rounded border border-emerald-800/60"
+                            >
+                              <CheckCircle2 size={10} />
+                              <span>Fulfill</span>
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* Memories Log (Short & Long Term) */}
+            <div className="bg-gray-950/80 p-3 rounded-xl border border-gray-800 space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider flex items-center gap-1">
+                  <Brain size={12} className="text-purple-400" />
+                  <span>Memory Log (Short & Long-Term)</span>
+                </span>
+                <button
+                  onClick={async () => {
+                    setIsLoadingMemories(true);
+                    try {
+                      const mems = await api.getAgentMemories(agent.id, 25);
+                      setDetailedMemories(mems);
+                    } finally {
+                      setIsLoadingMemories(false);
+                    }
+                  }}
+                  className="text-[10px] text-gray-400 hover:text-white flex items-center gap-0.5"
+                  title="Refresh memories"
+                >
+                  <RefreshCw size={10} className={isLoadingMemories ? 'animate-spin' : ''} />
+                  <span>{detailedMemories.length} Stored</span>
+                </button>
+              </div>
+
+              {isLoadingMemories ? (
+                <div className="flex items-center justify-center py-4 text-gray-500 gap-1.5 text-xs">
+                  <Loader2 size={13} className="animate-spin" />
+                  <span>Loading agent memories...</span>
+                </div>
+              ) : detailedMemories.length === 0 ? (
+                <p className="text-[11px] text-gray-500 italic py-1">No recorded memories yet today.</p>
+              ) : (
+                <div className="space-y-1.5 max-h-60 overflow-y-auto pr-1">
+                  {detailedMemories.map((mem) => {
+                    const isLongTerm = mem.importance >= 0.3;
+                    return (
+                      <div
+                        key={mem.id}
+                        className="bg-gray-900/80 p-2 rounded-lg border border-gray-800/80 space-y-1 text-[11px]"
+                      >
+                        <div className="flex items-center justify-between text-[10px] text-gray-400">
+                          <span className="flex items-center gap-1">
+                            <span className="capitalize px-1 py-0.2 bg-gray-800 rounded text-[9px] text-gray-300">
+                              {mem.event_type}
+                            </span>
+                            {mem.day && <span className="font-mono text-[9px]">Day {mem.day}</span>}
+                          </span>
+                          <span
+                            className={`font-mono text-[9px] px-1 rounded ${
+                              mem.importance >= 0.7
+                                ? 'bg-amber-950/60 text-amber-300 border border-amber-800/60'
+                                : 'bg-gray-800 text-gray-300'
+                            }`}
+                          >
+                            ⭐ {mem.importance} {isLongTerm ? '(ChromaDB)' : ''}
+                          </span>
+                        </div>
+                        <p className="text-gray-200 leading-snug">{mem.text}</p>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           </div>
         )}

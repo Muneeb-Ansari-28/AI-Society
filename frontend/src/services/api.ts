@@ -70,6 +70,31 @@ export const api = {
     return await res.json();
   },
 
+  async searchAgentMemories(agentId: string, query: string, limit: number = 5): Promise<any[]> {
+    const res = await fetch(`${API_BASE}/api/agents/${agentId}/memories/search`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ query, limit }),
+    });
+    if (!res.ok) throw new Error(`Failed to search memories for ${agentId}`);
+    return await res.json();
+  },
+
+  async getAgentPromises(agentId: string): Promise<any[]> {
+    const res = await fetch(`${API_BASE}/api/agents/${agentId}/promises`);
+    if (!res.ok) throw new Error(`Failed to fetch promises for ${agentId}`);
+    return await res.json();
+  },
+
+  async fulfillPromise(promiseId: number): Promise<any> {
+    const res = await fetch(`${API_BASE}/api/agents/promises/${promiseId}/fulfill`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+    });
+    if (!res.ok) throw new Error(`Failed to fulfill promise ${promiseId}`);
+    return await res.json();
+  },
+
   async getAgentRelationships(agentId: string): Promise<Record<string, any>> {
     const res = await fetch(`${API_BASE}/api/agents/${agentId}/relationships`);
     if (!res.ok) throw new Error(`Failed to fetch relationships for ${agentId}`);

@@ -19,6 +19,8 @@ build/
 *.sqlite3
 tiny_society.db
 **/tiny_society.db
+chroma_db/
+**/chroma_db/
 
 # Environment variables & secrets
 .env
