@@ -1,5 +1,7 @@
 import json
 import logging
+import re
+import random
 from typing import Dict, Any, List, Optional
 from sqlalchemy.orm import Session
 from ..database.repository import Repository
@@ -95,8 +97,17 @@ class ConversationEngine:
 
         # Attempt Ollama LLM generation
         try:
-            raw_response = await ollama_client.generate(prompt=user_prompt, system=system_prompt)
-            data = json.loads(raw_response.strip())
+            raw_response = await ollama_client.generate(
+                prompt=user_prompt,
+                system=system_prompt,
+                format_json=True
+            )
+            text = raw_response.strip()
+            json_match = re.search(r"\{.*\}", text, re.DOTALL)
+            if json_match:
+                text = json_match.group(0)
+
+            data = json.loads(text)
 
             # Validate structure
             topic = data.get("topic", "village life")
@@ -106,8 +117,8 @@ class ConversationEngine:
             friendship_delta = int(data.get("friendship_delta", 3))
 
             if len(dialogue_list) >= 2:
-                line_a = dialogue_list[0].get("text", "").strip('"')
-                line_b = dialogue_list[1].get("text", "").strip('"')
+                line_a = str(dialogue_list[0].get("text", "")).strip('"\n ')
+                line_b = str(dialogue_list[1].get("text", "")).strip('"\n ')
             else:
                 line_a, line_b = ConversationEngine._get_fallback_dialogue(agent_a["id"], agent_b["id"])
 

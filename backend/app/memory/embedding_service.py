@@ -78,5 +78,9 @@ class EmbeddingService:
             print(f"[EmbeddingService] Failed sync embedding generation for '{cleaned[:30]}...': {e}")
         return None
 
+    def get_embedding(self, text: str) -> Optional[List[float]]:
+        """Convenience synchronous alias for get_embedding_sync"""
+        return self.get_embedding_sync(text)
+
 # Singleton instance
 embedding_service = EmbeddingService()

@@ -23,20 +23,26 @@ def format_time_string(time_minutes: int) -> str:
     return f"{h12:02d}:{mins:02d} {ampm}"
 
 def build_system_prompt(profile: Dict[str, Any]) -> str:
+    work_loc = profile.get('work_location', 'town_square')
+    home_loc = profile.get('home_location', 'town_square')
     return (
         f"You are {profile['name']}, an autonomous {profile['occupation']} living in the peaceful village of Tiny Society.\n"
         f"Personality: {profile['personality']}\n"
         f"Personal Goal: {profile['goals']}\n"
         f"Key Tension/Conflict: {profile.get('conflict', '')}\n"
-        f"Home: {profile.get('home_location', 'town_square')} | Primary Workplace: {profile.get('work_location', 'town_square')}\n\n"
+        f"Home: {home_loc} | Primary Workplace: {work_loc}\n\n"
         "You must make an autonomous decision for your next simulation action.\n"
         "Allowed Actions: [move, work, talk, trade, help, rest, idle]\n"
-        "Allowed Locations: [alex_farm, wheat_field, town_square, noah_shop, mia_bakery, emma_healer, leo_workshop, lake_dock, old_shed, campsite]\n"
-        "Note on social actions (talk, trade, help): If choosing talk/trade/help, specify 'target' as one of [alex, mia, noah, emma, leo].\n\n"
+        "Allowed Locations: [alex_farm, wheat_field, town_square, noah_shop, mia_bakery, emma_healer, leo_workshop, lake_dock, old_shed, campsite]\n\n"
+        "Simulation Guidelines to Prevent Looping:\n"
+        f"1. Work Activities: If choosing 'work', your location must be your workplace ({work_loc}). If you are elsewhere, choose 'move' to walk there first.\n"
+        "2. Social Actions: You can only 'talk', 'trade', or 'help' with villagers who are listed under 'Nearby Villagers' at your current location! Do not talk to villagers who are elsewhere; move to meet them instead.\n"
+        "3. Active Routine: Do not loiter in the town square repeating the same action. Maintain a dynamic schedule throughout the day: work your trade, visit shops for supplies, check on your home/chores, and interact meaningfully.\n"
+        "4. Anti-Repetition: Do NOT repeat the exact same dialogue, target, or reason as your recent turns. Progress the day naturally.\n\n"
         "You MUST respond ONLY with a valid JSON object matching this exact format:\n"
         "{\n"
         '  "action": "work",\n'
-        '  "location": "wheat_field",\n'
+        f'  "location": "{work_loc}",\n'
         '  "target": null,\n'
         '  "reason": "Brief explanation why you chose this action.",\n'
         '  "dialogue": "A short, immersive in-character sentence you say out loud (or null)."\n'

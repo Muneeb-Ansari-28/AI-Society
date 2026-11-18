@@ -53,15 +53,23 @@ class DecisionEngine:
                 system=system_prompt,
                 format_json=True
             )
-            action_data = DecisionEngine._parse_and_validate(raw_response, agent)
+            action_data = DecisionEngine._parse_and_validate(
+                raw_response=raw_response,
+                agent=agent,
+                nearby_agents=nearby_agents,
+            )
             return action_data
         except Exception:
             # Fallback contextual action if Ollama fails or times out
             return DecisionEngine._get_contextual_fallback(agent)
 
     @staticmethod
-    def _parse_and_validate(raw_response: str, agent: Dict[str, Any]) -> Dict[str, Any]:
-        """Cleans and validates the JSON response from Llama 3.2"""
+    def _parse_and_validate(
+        raw_response: str,
+        agent: Dict[str, Any],
+        nearby_agents: Optional[List[str]] = None,
+    ) -> Dict[str, Any]:
+        """Cleans, validates, and anti-loop guards the JSON response from Llama 3.2"""
         text = raw_response.strip()
         json_match = re.search(r"\{.*\}", text, re.DOTALL)
         if json_match:
@@ -70,7 +78,7 @@ class DecisionEngine:
         data = json.loads(text)
 
         # Validate action
-        action = data.get("action", "idle").lower()
+        action = str(data.get("action", "idle")).lower().strip()
         if action not in VALID_ACTIONS:
             action = "work" if agent.get("id") == "alex" else "idle"
 
@@ -79,13 +87,56 @@ class DecisionEngine:
         if not location or location not in VALID_LOCATIONS:
             location = agent.get("work_location", "town_square")
 
+        target = data.get("target")
         reason = data.get("reason", f"Decided to {action} based on daily routine.")
         dialogue = data.get("dialogue")
+
+        current_loc = agent.get("location", "town_square")
+        work_loc = agent.get("work_location", "town_square")
+        home_loc = agent.get("home_location", "town_square")
+
+        # Anti-Loop Rule 1: Working is always situated at the agent's workplace
+        if action == "work":
+            location = work_loc
+
+        # Anti-Loop Rule 2: Social interactions require someone actually nearby (if nearby list is known)
+        if action in ["talk", "trade", "help"] and nearby_agents is not None:
+            nearby_clean = [str(n).lower().strip() for n in nearby_agents]
+            if nearby_clean:
+                # If chosen target is nearby, keep them; otherwise pick the first nearby villager
+                matched_target = None
+                if target:
+                    t_str = str(target).lower().strip()
+                    for n in nearby_clean:
+                        if n in t_str or t_str in n:
+                            matched_target = n
+                            break
+                target = matched_target or nearby_clean[0]
+            else:
+                # Nobody nearby to talk to! Switch to moving toward workplace or chores
+                target = None
+                if current_loc != work_loc:
+                    action = "move"
+                    location = work_loc
+                    reason = f"Nobody nearby at {current_loc}, walking to {work_loc} to attend to chores."
+                else:
+                    action = "work"
+                    location = work_loc
+                    reason = f"Working peacefully at {work_loc}."
+
+        # Anti-Loop Rule 3: Moving to current location is a no-op; vary destination
+        if action == "move" and location == current_loc:
+            if current_loc != work_loc:
+                location = work_loc
+            elif current_loc != "town_square":
+                location = "town_square"
+            else:
+                location = home_loc
 
         return {
             "action": action,
             "location": location,
-            "target": data.get("target"),
+            "target": target,
             "reason": str(reason),
             "dialogue": str(dialogue) if dialogue else None
         }

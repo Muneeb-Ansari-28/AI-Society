@@ -4,10 +4,10 @@ from sqlalchemy.orm import Session
 from ..database.repository import Repository
 
 PROMISE_PATTERNS = [
-    r"(?:i will|i'll|i promise to|i plan to)\s+(?:bring|deliver|trade|give|meet|make|craft|help)\s+([^.!?]+)",
-    r"(?:let's meet|meet me at)\s+([^.!?]+)",
+    r"(?:i will|i'll|i'm going to|i am going to|i'm bringing|i promise to|i plan to|i can bring|count on me to)\s+(?:bring|deliver|trade|give|meet|make|craft|help|have|bake|prepare|get)\s+([^.!?]+)",
+    r"(?:let's meet|meet me at|see you at)\s+([^.!?]+)",
     r"(?:bring me|give me)\s+([^.!?]+)\s+(?:and i will|and i'll)\s+([^.!?]+)",
-    r"(?:agreed to|deal:)\s+([^.!?]+)",
+    r"(?:agreed to|deal:|we have a deal|it's a deal)\s*([^.!?]*)",
 ]
 
 class PromiseTracker:
@@ -26,7 +26,11 @@ class PromiseTracker:
                 return text.strip()
 
         # Catch keywords
-        if any(w in lowered for w in ["i promise", "i swear", "i'll bring", "i will bring", "i'll meet", "i will meet"]):
+        if any(w in lowered for w in [
+            "i promise", "i swear", "i'll bring", "i will bring", "i'm bringing",
+            "i'll have", "i will have", "i'll bake", "i will bake", "i'll craft",
+            "i'll meet", "i will meet", "count on me", "it's a deal", "we have a deal"
+        ]):
             return text.strip()
 
         return None

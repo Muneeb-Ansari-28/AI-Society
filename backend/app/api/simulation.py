@@ -19,7 +19,22 @@ class SaveLoadRequest(BaseModel):
 
 @router.get("/world")
 def get_world(db: Session = Depends(get_db)):
-    return Repository.get_world_state(db)
+    world = Repository.get_world_state(db)
+    from ..llm.prompts import format_time_string
+    time_str = format_time_string(world.get("time_minutes", 510))
+    minutes = world.get("time_minutes", 510)
+    period = "Night"
+    if 360 <= minutes < 720:
+        period = "Morning"
+    elif 720 <= minutes < 1080:
+        period = "Afternoon"
+    elif 1080 <= minutes < 1320:
+        period = "Evening"
+
+    world["timeString"] = time_str
+    world["period"] = period
+    world["isRunning"] = world.get("is_running", True)
+    return world
 
 @router.get("/events")
 def get_events(limit: int = 30, db: Session = Depends(get_db)):
@@ -32,7 +47,7 @@ async def start_simulation():
         "type": "simulation_status",
         "data": {"is_running": True}
     })
-    return {"status": "started"}
+    return {"status": "started", "is_running": True}
 
 @router.post("/pause")
 async def pause_simulation():
@@ -41,7 +56,7 @@ async def pause_simulation():
         "type": "simulation_status",
         "data": {"is_running": False}
     })
-    return {"status": "paused"}
+    return {"status": "paused", "is_running": False}
 
 @router.post("/speed")
 async def set_speed(req: SpeedRequest):

@@ -81,6 +81,29 @@ def test_contextual_fallbacks_for_all_agents():
         assert fb["location"] in VALID_LOCATIONS
         assert "reason" in fb
 
+def test_anti_loop_social_action_when_alone():
+    """If an agent tries to talk when alone, action redirects to move or work."""
+    raw = '{"action": "talk", "location": "town_square", "target": "mia", "reason": "Chatting"}'
+    agent = {"id": "alex", "location": "town_square", "work_location": "wheat_field"}
+    # Pass empty nearby_agents list indicating nobody is at the square
+    parsed = DecisionEngine._parse_and_validate(raw, agent, nearby_agents=[])
+    assert parsed["action"] in ["move", "work"]
+    assert parsed["target"] is None
+
+def test_anti_loop_move_to_same_location_redirects():
+    """Moving to current location redirects to an alternate destination."""
+    raw = '{"action": "move", "location": "town_square", "reason": "Standing around"}'
+    agent = {"id": "alex", "location": "town_square", "work_location": "wheat_field", "home_location": "alex_farm"}
+    parsed = DecisionEngine._parse_and_validate(raw, agent)
+    assert parsed["location"] != "town_square"
+
+def test_work_action_anchors_to_workplace():
+    """Working always anchors to the character's designated workplace."""
+    raw = '{"action": "work", "location": "town_square", "reason": "Doing farm work"}'
+    agent = {"id": "alex", "location": "town_square", "work_location": "wheat_field"}
+    parsed = DecisionEngine._parse_and_validate(raw, agent)
+    assert parsed["location"] == "wheat_field"
+
 def test_prompt_builders():
     """System prompt and observation prompt format and populate required context fields."""
     agent = {

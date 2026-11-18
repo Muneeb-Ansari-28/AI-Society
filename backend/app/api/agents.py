@@ -107,6 +107,30 @@ def get_agent_relationships(agent_id: str, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Agent not found")
     return Repository.get_agent_relationships(db, agent_id)
 
+@router.post("/{agent_id}/move")
+async def command_agent_move(agent_id: str, payload: Dict[str, Any], db: Session = Depends(get_db)):
+    """Commands an agent to move to a specific village location"""
+    agent = Repository.get_agent(db, agent_id)
+    if not agent:
+        raise HTTPException(status_code=404, detail="Agent not found")
+    location = payload.get("location")
+    from ..llm.prompts import VALID_LOCATIONS
+    if not location or location not in VALID_LOCATIONS:
+        raise HTTPException(status_code=400, detail="Invalid location specified")
+
+    decision = {
+        "action": "move",
+        "location": location,
+        "reason": f"Commanded to walk to {location}.",
+    }
+    result = ActionExecutor.execute(db, agent_id, decision)
+
+    await manager.broadcast({
+        "type": "agent_action",
+        "data": result
+    })
+    return result
+
 @router.post("/{agent_id}/converse/{target_id}")
 async def trigger_conversation(agent_id: str, target_id: str, db: Session = Depends(get_db)):
     """Manually triggers a dynamic in-character conversation between two villagers using Llama 3.2"""

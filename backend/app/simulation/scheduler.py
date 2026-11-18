@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import random
 from typing import Optional, List, Dict
 from ..database.session import SessionLocal
 from ..database.repository import Repository
@@ -120,13 +121,18 @@ class SimulationScheduler:
                     target_id = result.get("target")
                     partner = Repository.get_agent(db, target_id) if target_id else (nearby_agents[0] if nearby_agents else None)
 
-                    if partner and (result["action"] in ["talk", "help", "trade"] or (nearby_agents and result["action"] == "idle")):
+                    should_convo = partner and (
+                        result["action"] in ["talk", "help", "trade"]
+                        or (nearby_agents and result["action"] == "idle" and random.random() < 0.25)
+                    )
+
+                    if should_convo and partner:
                         pair_key = "_".join(sorted([agent_id, partner["id"]]))
                         now = asyncio.get_event_loop().time()
                         last_time = self.last_conversation_time.get(pair_key, 0)
 
-                        # 40-second cooldown per pair to keep conversations natural
-                        if now - last_time > (40.0 / self.speed):
+                        # 60-second cooldown per pair to keep conversations natural and prevent talking loops
+                        if now - last_time > (60.0 / self.speed):
                             self.last_conversation_time[pair_key] = now
                             convo = await ConversationEngine.generate_conversation(
                                 db=db,
