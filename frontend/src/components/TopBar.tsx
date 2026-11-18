@@ -1,5 +1,5 @@
-import React from 'react';
-import { Play, Pause, RotateCcw, Save, Sun, Clock } from 'lucide-react';
+import React, { useState } from 'react';
+import { Play, Pause, RotateCcw, Save, Download, Sun, Clock, Users, Loader2 } from 'lucide-react';
 import type { WorldState } from '../types/simulation';
 import { EventBus } from '../game/EventBus';
 import { api } from '../services/api';
@@ -8,10 +8,19 @@ import type { WSConnectionStatus } from '../services/websocket';
 interface TopBarProps {
   worldState: WorldState;
   wsStatus: WSConnectionStatus;
-  onSaveNotice: () => void;
+  onSaveNotice: (message?: string) => void;
+  onOpenSocial: () => void;
 }
 
-export const TopBar: React.FC<TopBarProps> = ({ worldState, wsStatus, onSaveNotice }) => {
+export const TopBar: React.FC<TopBarProps> = ({
+  worldState,
+  wsStatus,
+  onSaveNotice,
+  onOpenSocial,
+}) => {
+  const [isSaving, setIsSaving] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+
   const togglePlay = () => {
     const nextRunning = !worldState.isRunning;
     EventBus.emit('toggle-simulation', nextRunning);
@@ -27,15 +36,44 @@ export const TopBar: React.FC<TopBarProps> = ({ worldState, wsStatus, onSaveNoti
     api.setSpeed(speed).catch(() => {});
   };
 
-  const resetWorld = () => {
-    if (window.confirm('Reset village world to Day 1 Morning?')) {
-      EventBus.emit('reset-world');
-      api.resetSimulation().catch(() => {});
+  const resetWorld = async () => {
+    if (window.confirm('Reset village world to Day 1 Morning initial state?')) {
+      try {
+        await api.resetSimulation();
+        EventBus.emit('reset-world');
+        onSaveNotice('World reset to Day 1 Morning initial state.');
+      } catch (err) {
+        console.warn('Reset failed:', err);
+      }
     }
   };
 
-  const handleSave = () => {
-    onSaveNotice();
+  const handleSave = async () => {
+    if (isSaving) return;
+    setIsSaving(true);
+    try {
+      const res = await api.saveSimulation('quicksave');
+      onSaveNotice(res.message || 'Snapshot quicksaved successfully!');
+    } catch {
+      onSaveNotice('Failed to save simulation snapshot.');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleLoad = async () => {
+    if (isLoading) return;
+    if (window.confirm('Load the most recent quicksave snapshot? Any unsaved progress will be replaced.')) {
+      setIsLoading(true);
+      try {
+        const res = await api.loadSimulation('quicksave');
+        onSaveNotice(res.message || 'Snapshot quicksave restored successfully!');
+      } catch {
+        onSaveNotice('No quicksave snapshot found to restore.');
+      } finally {
+        setIsLoading(false);
+      }
+    }
   };
 
   return (
@@ -107,18 +145,43 @@ export const TopBar: React.FC<TopBarProps> = ({ worldState, wsStatus, onSaveNoti
           ))}
         </div>
 
+        <div className="h-4 w-px bg-gray-800 mx-1" />
+
+        {/* Quick Save */}
         <button
           onClick={handleSave}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-gray-800 hover:bg-gray-700 text-gray-200 transition-colors"
-          title="Save Simulation State"
+          disabled={isSaving}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-gray-800 hover:bg-gray-700 text-gray-200 transition-colors disabled:opacity-50"
+          title="Save Full Snapshot (Agents, Memories, World)"
         >
-          <Save size={14} />
+          {isSaving ? <Loader2 size={14} className="animate-spin text-emerald-400" /> : <Save size={14} />}
           <span>Save</span>
+        </button>
+
+        {/* Quick Load */}
+        <button
+          onClick={handleLoad}
+          disabled={isLoading}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-gray-800 hover:bg-gray-700 text-gray-200 transition-colors disabled:opacity-50"
+          title="Restore Quicksave Snapshot"
+        >
+          {isLoading ? <Loader2 size={14} className="animate-spin text-blue-400" /> : <Download size={14} />}
+          <span>Load</span>
+        </button>
+
+        {/* Social Matrix Toggle */}
+        <button
+          onClick={onOpenSocial}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-indigo-950/70 border border-indigo-800/80 hover:bg-indigo-900 text-indigo-200 transition-colors"
+          title="Open Village Social Network & Relationships"
+        >
+          <Users size={14} className="text-indigo-400" />
+          <span>Relationships</span>
         </button>
 
         <button
           onClick={resetWorld}
-          className="p-1.5 rounded-lg text-gray-400 hover:text-gray-200 hover:bg-gray-800 transition-colors"
+          className="p-1.5 rounded-lg text-gray-400 hover:text-red-400 hover:bg-gray-800 transition-colors"
           title="Reset Simulation to Day 1"
         >
           <RotateCcw size={14} />

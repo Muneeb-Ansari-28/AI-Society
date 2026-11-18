@@ -164,4 +164,30 @@ export const api = {
     const res = await fetch(`${API_BASE}/api/simulation/reset`, { method: 'POST' });
     return await res.json();
   },
+
+  async saveSimulation(saveName: string = 'quicksave'): Promise<any> {
+    const res = await fetch(`${API_BASE}/api/simulation/save`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ save_name: saveName }),
+    });
+    if (!res.ok) throw new Error('Failed to save simulation state');
+    return await res.json();
+  },
+
+  async loadSimulation(saveName: string = 'quicksave'): Promise<any> {
+    const res = await fetch(`${API_BASE}/api/simulation/load`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ save_name: saveName }),
+    });
+    if (!res.ok) throw new Error('Failed to load simulation state');
+    return await res.json();
+  },
+
+  async getSaveInfo(saveName: string = 'quicksave'): Promise<any> {
+    const res = await fetch(`${API_BASE}/api/simulation/save/info?name=${saveName}`);
+    if (!res.ok) return { exists: false };
+    return await res.json();
+  },
 };

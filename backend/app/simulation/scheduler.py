@@ -8,6 +8,7 @@ from .action_executor import ActionExecutor
 from ..social.relationship_manager import RelationshipManager
 from ..social.conversation import ConversationEngine
 from ..memory.memory_manager import memory_manager
+from .persistence import persistence_manager
 from ..api.websocket import manager
 from ..config import SIMULATION_TICK_SECONDS
 
@@ -22,6 +23,7 @@ class SimulationScheduler:
         self.agent_queue: List[str] = ["alex", "mia", "noah", "emma", "leo"]
         self.current_agent_index = 0
         self.last_conversation_time: Dict[str, float] = {}
+        self.tick_count = 0
 
     def start(self):
         if not self.task or self.task.done():
@@ -62,6 +64,11 @@ class SimulationScheduler:
                         "type": "world_tick",
                         "data": world
                     })
+
+                    # Auto-save snapshot periodically
+                    self.tick_count += 1
+                    if self.tick_count % 30 == 0:
+                        persistence_manager.save_state(db, "autosave")
 
                     # 2. Select next agent from round-robin queue
                     agent_id = self.agent_queue[self.current_agent_index]

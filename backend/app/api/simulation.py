@@ -1,17 +1,21 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 
 from ..database.session import get_db
 from ..database.repository import Repository
 from ..simulation.scheduler import scheduler
+from ..simulation.persistence import persistence_manager
 from ..api.websocket import manager
 
 router = APIRouter(prefix="/api/simulation", tags=["Simulation"])
 
 class SpeedRequest(BaseModel):
     speed: float
+
+class SaveLoadRequest(BaseModel):
+    save_name: Optional[str] = "quicksave"
 
 @router.get("/world")
 def get_world(db: Session = Depends(get_db)):
@@ -48,12 +52,48 @@ async def set_speed(req: SpeedRequest):
     })
     return {"status": "updated", "speed": req.speed}
 
-@router.post("/reset")
-async def reset_simulation(db: Session = Depends(get_db)):
-    Repository.initialize_default_data(db)
-    world = Repository.get_world_state(db)
+@router.post("/save")
+async def save_simulation(req: SaveLoadRequest = SaveLoadRequest(), db: Session = Depends(get_db)):
+    """Saves a complete simulation snapshot (world, agents, inventory, relationships, promises)"""
+    res = persistence_manager.save_state(db, save_name=req.save_name or "quicksave")
+    await manager.broadcast({
+        "type": "simulation_saved",
+        "data": res
+    })
+    return res
+
+@router.post("/load")
+async def load_simulation(req: SaveLoadRequest = SaveLoadRequest(), db: Session = Depends(get_db)):
+    """Restores full simulation snapshot and syncs all connected clients"""
+    res = persistence_manager.load_state(db, save_name=req.save_name or "quicksave")
+    if res.get("status") == "error":
+        raise HTTPException(status_code=404, detail=res.get("message"))
+
     await manager.broadcast({
         "type": "world_reset",
-        "data": world
+        "data": {
+            "world": res.get("world"),
+            "agents": res.get("agents")
+        }
     })
-    return {"status": "reset"}
+    return res
+
+@router.get("/save/info")
+def get_save_info(name: str = "quicksave"):
+    info = persistence_manager.get_save_info(name)
+    if not info:
+        return {"exists": False}
+    return info
+
+@router.post("/reset")
+async def reset_simulation(db: Session = Depends(get_db)):
+    """Hard resets the entire world back to Day 1 Morning defaults"""
+    res = persistence_manager.reset_world(db)
+    await manager.broadcast({
+        "type": "world_reset",
+        "data": {
+            "world": res.get("world"),
+            "agents": res.get("agents")
+        }
+    })
+    return res

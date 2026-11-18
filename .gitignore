@@ -21,6 +21,8 @@ tiny_society.db
 **/tiny_society.db
 chroma_db/
 **/chroma_db/
+saves/
+**/saves/
 
 # Environment variables & secrets
 .env
