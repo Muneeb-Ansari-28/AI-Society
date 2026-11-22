@@ -100,7 +100,8 @@ class ConversationEngine:
             raw_response = await ollama_client.generate(
                 prompt=user_prompt,
                 system=system_prompt,
-                format_json=True
+                format_json=True,
+                max_tokens=220
             )
             text = raw_response.strip()
             json_match = re.search(r"\{.*\}", text, re.DOTALL)

@@ -47,8 +47,8 @@ class SimulationScheduler:
     async def _run_loop(self):
         while True:
             try:
-                # Delay based on simulation speed (e.g. 3.5s at 1x)
-                delay = max(2.0, SIMULATION_TICK_SECONDS / self.speed)
+                # Fast, responsive agent turns
+                delay = max(0.4, SIMULATION_TICK_SECONDS / self.speed)
                 await asyncio.sleep(delay)
 
                 if not self.is_running:

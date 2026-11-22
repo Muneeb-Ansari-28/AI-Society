@@ -7,15 +7,17 @@ class OllamaClient:
         self.base_url = base_url.rstrip("/")
         self.model = model
 
-    async def generate(self, prompt: str, system: Optional[str] = None, format_json: bool = False) -> str:
+    async def generate(self, prompt: str, system: Optional[str] = None, format_json: bool = False, max_tokens: int = 120) -> str:
         payload: Dict[str, Any] = {
             "model": self.model,
             "prompt": prompt,
             "stream": False,
+            "keep_alive": "30m",
             "options": {
                 "temperature": 0.7,
                 "top_p": 0.9,
                 "num_ctx": 2048,
+                "num_predict": max_tokens,
             }
         }
         if system:

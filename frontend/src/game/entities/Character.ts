@@ -28,6 +28,11 @@ export class Character extends Phaser.GameObjects.Container {
   private speechTimer?: Phaser.Time.TimerEvent;
   public isSelected = false;
 
+  // Stuck detection & recovery
+  private lastCheckX = 0;
+  private lastCheckY = 0;
+  private stuckTimer = 0;
+
   constructor(
     scene: Phaser.Scene,
     x: number,
@@ -119,8 +124,8 @@ export class Character extends Phaser.GameObjects.Container {
     // Enable physics for this container
     scene.physics.world.enable(this);
     const body = this.body as Phaser.Physics.Arcade.Body;
-    body.setSize(18, 16);
-    body.setOffset(-9, 10);
+    body.setSize(10, 8);
+    body.setOffset(-5, 12);
     body.setCollideWorldBounds(true);
 
     // Make interactive for mouse clicks
@@ -252,6 +257,9 @@ export class Character extends Phaser.GameObjects.Container {
     this.currentPathIndex = 0;
     this.onReachCallback = onReach || null;
     this.isMoving = true;
+    this.stuckTimer = 0;
+    this.lastCheckX = this.x;
+    this.lastCheckY = this.y;
     this.setAction('move', `Heading to destination`);
   }
 
@@ -289,15 +297,39 @@ export class Character extends Phaser.GameObjects.Container {
     const dist = Phaser.Math.Distance.Between(this.x, this.y, targetPoint.x, targetPoint.y);
 
     const isFinal = this.currentPathIndex === this.path.length - 1;
-    const threshold = isFinal ? 6 : 10;
+    const threshold = isFinal ? 8 : 12;
 
     if (dist < threshold) {
       // Reached current waypoint
+      this.stuckTimer = 0;
       this.currentPathIndex++;
       if (this.currentPathIndex >= this.path.length) {
         this.finishMovement();
         return;
       }
+    }
+
+    // Stuck detection & recovery:
+    // If agent has moved less than 2 pixels over 1.2 seconds while traveling, auto-recover!
+    const moved = Phaser.Math.Distance.Between(this.x, this.y, this.lastCheckX, this.lastCheckY);
+    if (moved < 2.0) {
+      this.stuckTimer += delta;
+      if (this.stuckTimer > 1200) {
+        this.stuckTimer = 0;
+        if (this.currentPathIndex < this.path.length - 1) {
+          // Skip past the blocked waypoint
+          this.currentPathIndex++;
+        } else {
+          // At final destination waypoint: finish movement cleanly
+          this.setPosition(targetPoint.x, targetPoint.y);
+          this.finishMovement();
+          return;
+        }
+      }
+    } else {
+      this.stuckTimer = 0;
+      this.lastCheckX = this.x;
+      this.lastCheckY = this.y;
     }
 
     // Move towards current waypoint

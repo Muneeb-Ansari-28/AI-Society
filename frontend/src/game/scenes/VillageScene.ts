@@ -54,19 +54,16 @@ export class VillageScene extends Phaser.Scene {
 
     // 3. Spawn 5 autonomous characters
     const spawnPoints: Record<string, { x: number; y: number }> = {
-      alex: { x: 240, y: 530 }, // Farm
-      mia: { x: 240, y: 285 },  // Bakery
-      noah: { x: 515, y: 305 }, // Shop
-      emma: { x: 475, y: 170 }, // Clinic
-      leo: { x: 460, y: 470 },  // Workshop
+      alex: { x: 305, y: 530 }, // Barn entrance
+      mia: { x: 240, y: 290 },  // Bakery
+      noah: { x: 515, y: 330 }, // Shop front
+      emma: { x: 475, y: 175 }, // Clinic
+      leo: { x: 435, y: 465 },  // Workshop
     };
 
     for (const [id, personality] of Object.entries(AGENT_PERSONALITIES)) {
       const pt = spawnPoints[id] || { x: 395, y: 355 };
       const char = new Character(this, pt.x, pt.y, personality);
-
-      // Collide character with static obstacles
-      this.physics.add.collider(char, this.obstaclesGroup);
 
       // Click on character to select
       char.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
@@ -209,11 +206,11 @@ export class VillageScene extends Phaser.Scene {
       this.simTimeMinutes = 8 * 60 + 30;
       this.day = 1;
       const spawnPoints: Record<string, { x: number; y: number }> = {
-        alex: { x: 240, y: 530 },
-        mia: { x: 240, y: 285 },
-        noah: { x: 515, y: 305 },
-        emma: { x: 475, y: 170 },
-        leo: { x: 460, y: 470 },
+        alex: { x: 305, y: 530 },
+        mia: { x: 240, y: 290 },
+        noah: { x: 515, y: 330 },
+        emma: { x: 475, y: 175 },
+        leo: { x: 435, y: 465 },
       };
       for (const [id, char] of this.characters.entries()) {
         const pt = spawnPoints[id] || { x: 395, y: 355 };
