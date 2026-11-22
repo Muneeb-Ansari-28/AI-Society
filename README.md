@@ -1,4 +1,4 @@
-# 🏘️ Tiny Society — Autonomous AI Village Simulation
+# 🏘️ Tiny Society Autonomous AI Village Simulation
 
 <div align="center">
 
